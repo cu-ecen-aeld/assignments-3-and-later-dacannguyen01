@@ -5,7 +5,7 @@ searchstr=$2
 
 if [ "$#" -ne 2 ]
 then
-	echo "Need 2 parameters"
+	echo "Need 2 parameters "
 	exit 1
 elif ! [ -d $filedir ] 
 then
