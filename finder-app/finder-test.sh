@@ -7,7 +7,7 @@ set -u
 
 NUMFILES=10
 WRITESTR=AELD_IS_FUN
-WRITEDIR=/home/nda/tmp/aeld-data
+WRITEDIR=/tmp/aeld-data
 username=$(cat conf/username.txt)
 
 if [ $# -lt 2 ]
@@ -41,7 +41,7 @@ rm -rf "${WRITEDIR}"
 	else
 		exit 1
 	fi
-echo "Removing the old writer utility and compiling as a native application"
+#echo "Removing the old writer utility and compiling as a native application"
 #make clean
 #make
 
