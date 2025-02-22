@@ -47,10 +47,10 @@ rm -rf "${WRITEDIR}"
 
 for i in $( seq 1 $NUMFILES)
 do
-	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR")
 
 # write output of the finder command to /tmp/assignment4-result.txt
 writer /tmp/assignment-4-result.txt "$OUTPUTSTRING"
