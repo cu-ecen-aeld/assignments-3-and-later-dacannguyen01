@@ -2,11 +2,8 @@ CROSS_COMPILE=
 CC=$(CROSS_COMPILE)gcc
 all: writer
 
-writer.o:	writer.c
-	$(CC) -c writer.c
-
-writer:	writer.o
-	$(CC) writer.o -o writer
+writer: writer.c
+	$(CC) -Wall -Werror -o writer writer.c
 
 clean:
 	-rm -f *.o writer
