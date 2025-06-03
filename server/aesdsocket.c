@@ -91,7 +91,6 @@ void* connection_handler(void* arg) {
 
     printf("Accepted connection\n");
 
-    FILE *file;
     while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0)) > 0) {
         buffer[bytes_received] = '\0';
 
