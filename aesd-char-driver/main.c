@@ -21,7 +21,7 @@
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
+MODULE_AUTHOR("Nguyen Dac An"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
@@ -32,6 +32,9 @@ int aesd_open(struct inode *inode, struct file *filp)
     /**
      * TODO: handle open
      */
+    struct aesd_dev *dev;
+    dev = container_of(inode->cdev, aesd_dev, cdev);
+    filp->private_data = dev;
     return 0;
 }
 
@@ -52,6 +55,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     /**
      * TODO: handle read
      */
+    struct aesd_dev *dev = filp->private_data;
+    
     return retval;
 }
 
@@ -63,6 +68,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     /**
      * TODO: handle write
      */
+    
+    
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -105,6 +112,8 @@ int aesd_init_module(void)
     /**
      * TODO: initialize the AESD specific portion of the device
      */
+    aesd_circular_buffer_init(&aesd_device.buff);
+    mutex_init(&aesd_device.mu);
 
     result = aesd_setup_cdev(&aesd_device);
 
@@ -124,6 +133,14 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
+    uint8_t index = 0;
+	struct aesd_buffer_entry *entry;
+	AESD_CIRCULAR_BUFFER_FOREACH(entry,&aesd_device.buf,index) {
+		if(entry->buffptr!=NULL){	
+			kfree(entry->buffptr);
+		}
+	}
+    mutex_destroy(&aesd_device.lock);
 
     unregister_chrdev_region(devno, 1);
 }
