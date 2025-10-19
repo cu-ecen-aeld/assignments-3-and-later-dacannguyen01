@@ -55,9 +55,50 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     /**
      * TODO: handle read
      */
-    struct aesd_dev *dev = filp->private_data;
+    struct aesd_buffer_entry *entry;
+    ssize_t read_off;
     
-    return retval;
+    if (flip == NULL) return -EFAULT;
+    
+     
+    struct aesd_dev *dev = (struct aesd_dev*) filp->private_data;
+    
+    if (dev == NULL) return -EFAULT;
+    
+    if (mutex_lock_interruptible(&dev->mu)) return -ERESTARTSYS;
+    
+    
+    ssize_t char_offset = *f_pos;
+    
+    
+    for (i=0; i<10; i++)
+    {
+    	entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buf, char_offset, &read_off);
+    	if (entry == NULL) break;
+    	
+    	to_read = entry->size - read_off;
+    	
+    	if (to_read > count) to_read = count;
+    	
+    	not_copied = copy_to_user(buf + n_read, entry->buffptr + read_off, to_read);
+    	
+    	just_copied = to_read - not_copied;
+    	
+    	n_read += just_copied;
+    	
+    	count -= just_copied;
+    	
+    	search_offset += just_copied;
+    	
+    	if (count == 0) break;
+   	}
+    
+    *f_pos += n_read;
+    
+    mutex_unlock(&dev->mu);
+    	
+    	
+    return n_read;
 }
 
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
