@@ -17,7 +17,12 @@
 
 #define PORT "9000"
 #define BUFFER_SIZE 1024
+#define USE_AESD_CHAR_DEVICE 1
+#if USE_AESD_CHAR_DEVICE == 1
+#define FILE_PATH "/dev/aesdchar"
+#else
 #define FILE_PATH "/var/tmp/aesdsocketdata"
+#endif
 
 int server_socket = -1;
 int client_socket = -1;
@@ -38,7 +43,10 @@ void handle_signal(int sig) {
     printf("Caught signal, exiting\n");
     if (server_socket != -1) close(server_socket);
     if (client_socket != -1) close(client_socket);
+#if USE_AESD_CHAR_DEVICE == 1
+#else
     remove(FILE_PATH);
+#endif
     exit(0);
 }
 
@@ -95,6 +103,9 @@ void* connection_handler(void* arg) {
         buffer[bytes_received] = '\0';
 
         pthread_mutex_lock(&file_mutex);
+#ifdef USE_AESD_CHAR_DEVICE
+		int file_fd = open(FILE_PATH, O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+#else
         int file_fd = open(FILE_PATH, O_CREAT | O_WRONLY | O_APPEND, 0644);
         if (file_fd >= 0) {
             write(file_fd, buffer, bytes_received);
@@ -179,9 +190,11 @@ int main(int argc, char *argv[]) {
         perror("Failed to listen on socket");
         return -1;
     }
-
+#if USE_AESD_CHAR_DEVICE == 1
+#else
     pthread_t timestamp_thread;
     pthread_create(&timestamp_thread, NULL, timestamp_writer, NULL);
+#endif
 
     // while (1) {
     //     client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
@@ -244,6 +257,9 @@ int main(int argc, char *argv[]) {
     }
 
     close(server_socket);
+#if USE_AESD_CHAR_DEVICE == 1
+#else
     remove(FILE_PATH);
+#endif
     return 0;
 }
