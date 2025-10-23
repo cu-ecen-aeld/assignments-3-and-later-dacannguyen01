@@ -33,7 +33,7 @@ int aesd_open(struct inode *inode, struct file *filp)
      * TODO: handle open
      */
     struct aesd_dev *dev;
-    dev = container_of(inode->i_cdev, aesd_dev, cdev);
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data = dev;
     return 0;
 }
@@ -222,7 +222,7 @@ void aesd_cleanup_module(void)
 			kfree(entry->buffptr);
 		}
 	}
-    mutex_destroy(&aesd_device.lock);
+    mutex_destroy(&aesd_device.mu);
 
     unregister_chrdev_region(devno, 1);
 }
