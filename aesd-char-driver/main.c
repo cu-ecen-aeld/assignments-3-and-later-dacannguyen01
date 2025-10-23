@@ -33,7 +33,7 @@ int aesd_open(struct inode *inode, struct file *filp)
      * TODO: handle open
      */
     struct aesd_dev *dev;
-    dev = container_of(inode->cdev, aesd_dev, cdev);
+    dev = container_of(inode->i_cdev, aesd_dev, cdev);
     filp->private_data = dev;
     return 0;
 }
@@ -59,7 +59,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     ssize_t read_off;
     ssize_t to_read, not_copied, just_copied, search_offset, n_read;
     
-    if (flip == NULL) return -EFAULT;
+    if (filp == NULL) return -EFAULT;
     
      
     struct aesd_dev *dev = (struct aesd_dev*) filp->private_data;
@@ -72,7 +72,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     ssize_t char_offset = *f_pos;
     
     
-    for (i=0; i<10; i++)
+    for (int i=0; i<10; i++)
     {
     	entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buf, char_offset, &read_off);
     	if (entry == NULL) break;
@@ -113,7 +113,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
      * TODO: handle write
      */
 
-    if (flip == NULL) return -EFAULT;
+    if (filp == NULL) return -EFAULT;
     
      
     struct aesd_dev *dev = (struct aesd_dev*) filp->private_data;
@@ -136,11 +136,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         not_copied = copy_from_user((dev->ent.buffptr + dev->ent.size), buf, count);
         n_written = count - not_copied;
 
-        dev->working.size += n_written;
+        dev->ent.size += n_written;
 
         if(dev->ent.buffptr[dev->ent.size-1] == '\n') {
             if (dev->buf.full) {
-                kfree(dev->buff.entry[dev->buf.out_offs].buffptr);
+                kfree(dev->buf.entry[dev->buf.out_offs].buffptr);
             }
 
             aesd_circular_buffer_add_entry(&dev->buf, &dev->ent);
@@ -194,7 +194,7 @@ int aesd_init_module(void)
     /**
      * TODO: initialize the AESD specific portion of the device
      */
-    aesd_circular_buffer_init(&aesd_device.buff);
+    aesd_circular_buffer_init(&aesd_device.buf);
     mutex_init(&aesd_device.mu);
 
     result = aesd_setup_cdev(&aesd_device);
