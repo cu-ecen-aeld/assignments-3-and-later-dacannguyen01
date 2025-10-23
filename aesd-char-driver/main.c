@@ -106,6 +106,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
+    struct aesd_dev *dev;
     ssize_t n_written;
     int not_copied;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
@@ -116,7 +117,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (filp == NULL) return -EFAULT;
     
      
-    struct aesd_dev *dev = (struct aesd_dev*) filp->private_data;
+    dev = (struct aesd_dev*) filp->private_data;
     
     if (dev == NULL) return -EFAULT;
     
@@ -133,7 +134,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         n_written = -ENOMEM;
     }
     else {
-        not_copied = copy_from_user((dev->ent.buffptr + dev->ent.size), buf, count);
+        not_copied = copy_from_user((void *) (dev->ent.buffptr + dev->ent.size), buf, count);
         n_written = count - not_copied;
 
         dev->ent.size += n_written;
