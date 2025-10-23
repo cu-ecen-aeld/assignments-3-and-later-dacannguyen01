@@ -57,6 +57,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
      */
     struct aesd_buffer_entry *entry;
     ssize_t read_off;
+    ssize_t to_read, not_copied, just_copied, search_offset, n_read;
     
     if (flip == NULL) return -EFAULT;
     
@@ -105,13 +106,53 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
+    ssize_t n_written;
+    int not_copied;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
     /**
      * TODO: handle write
      */
+
+    if (flip == NULL) return -EFAULT;
     
+     
+    struct aesd_dev *dev = (struct aesd_dev*) filp->private_data;
     
-    return retval;
+    if (dev == NULL) return -EFAULT;
+    
+    if (mutex_lock_interruptible(&dev->mu)) return -ERESTARTSYS;
+
+    if(dev->ent.size == 0) {
+        dev->ent.buffptr = (char *) kmalloc(count, GFP_KERNEL);
+    }
+    else {
+        dev->ent.buffptr = (char *) krealloc(dev->ent.buffptr, dev->ent.size + count, GFP_KERNEL);
+    }
+
+    if (dev->ent.buffptr == NULL) {
+        n_written = -ENOMEM;
+    }
+    else {
+        not_copied = copy_from_user((dev->ent.buffptr + dev->ent.size), buf, count);
+        n_written = count - not_copied;
+
+        dev->working.size += n_written;
+
+        if(dev->ent.buffptr[dev->ent.size-1] == '\n') {
+            if (dev->buf.full) {
+                kfree(dev->buff.entry[dev->buf.out_offs].buffptr);
+            }
+
+            aesd_circular_buffer_add_entry(&dev->buf, &dev->ent);
+
+            dev->ent.buffptr = NULL;
+            dev->ent.size = 0;
+        }
+    }
+    
+    mutex_unlock(&dev->mu);
+  
+    return n_written;
 }
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
