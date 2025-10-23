@@ -103,10 +103,11 @@ void* connection_handler(void* arg) {
         buffer[bytes_received] = '\0';
 
         pthread_mutex_lock(&file_mutex);
-#ifdef USE_AESD_CHAR_DEVICE
+#ifdef USE_AESD_CHAR_DEVICE 1
 		int file_fd = open(FILE_PATH, O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
 #else
         int file_fd = open(FILE_PATH, O_CREAT | O_WRONLY | O_APPEND, 0644);
+#endif
         if (file_fd >= 0) {
             write(file_fd, buffer, bytes_received);
             close(file_fd);
