@@ -11,7 +11,7 @@ else
     group="wheel"
 fi
 
-if [ -e ${module}.ko ]; then
+if [ -e /lib/modules/6.1.44/extra/${module}.ko ]; then
     echo "Loading local built file ${module}.ko"
     insmod /lib/modules/6.1.44/extra/$module.ko $* || exit 1
 else
