@@ -1,266 +1,117 @@
-#include <stdio.h>
-#include <stdlib.h>
+/**
+ * @file aesd-circular-buffer.c
+ * @brief Functions and data related to a circular buffer imlementation
+ *
+ * @author Dan Walkes
+ * @date 2020-03-01
+ * @copyright Copyright (c) 2020
+ *
+ */
+
+#ifdef __KERNEL__
+#include <linux/string.h>
+#else
 #include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <pthread.h>
-#include <time.h>
-#include <sys/time.h>
-#include <sys/queue.h>
-
-#define PORT "9000"
-#define BUFFER_SIZE 1024
-#define USE_AESD_CHAR_DEVICE 1
-#if USE_AESD_CHAR_DEVICE == 1
-#define FILE_PATH "/dev/aesdchar"
-#else
-#define FILE_PATH "/var/tmp/aesdsocketdata"
 #endif
 
-int server_socket = -1;
-int client_socket = -1;
-volatile sig_atomic_t exit_requested = 0;
+#include "aesd-circular-buffer.h"
 
-pthread_mutex_t file_mutex;
 
-struct thread_info {
-    pthread_t thread_id;
-    int client_socket;
-    SLIST_ENTRY(thread_info) entries;
-};
+/**
+ * @param buffer 
+ * 				the buffer to search for corresponding offset.  
+ *				Any necessary locking must be performed by caller.
+ * @param char_offset 
+ *				the position to search for in the buffer list, describing the zero referenced
+ *      		character index if all buffer strings were concatenated end to end
+ * @param entry_offset_byte_rtn 
+ *				is a pointer specifying a location to store the byte of the returned aesd_buffer_entry
+ *      		buffptr member corresponding to char_offset.  
+ *				This value is only set when a matching char_offset is found in aesd_buffer.
+ * @return 
+ *				the struct aesd_buffer_entry structure representing the position described by char_offset, 
+ *				or NULL if this position is not available in the buffer (not enough data is written).
+ */
 
-SLIST_HEAD(thread_list, thread_info);
-struct thread_list thread_head = SLIST_HEAD_INITIALIZER(thread_head);
+struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
+	struct aesd_circular_buffer *buffer,
+    size_t char_offset, size_t *entry_offset_byte_rtn )
+{
+    /**
+    * TODO: implement per description
+    */
+	int i, out_offs;
+	struct aesd_buffer_entry *entry;
 
-void handle_signal(int sig) {
-    printf("Caught signal, exiting\n");
-    if (server_socket != -1) close(server_socket);
-    if (client_socket != -1) close(client_socket);
-#if USE_AESD_CHAR_DEVICE == 1
-#else
-    remove(FILE_PATH);
-#endif
-    exit(0);
-}
+	// check if buffer is empty
+	if (!buffer->full && buffer->in_offs == buffer->out_offs) {
+		return NULL;
+	} 
 
-void daemonize() {
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("Fork failed");
-        exit(EXIT_FAILURE);
-    }
-    if (pid > 0) {
-        exit(EXIT_SUCCESS);
-    }
-    umask(0);
-    if (setsid() < 0) {
-        perror("Failed to create new session");
-        exit(EXIT_FAILURE);
-    }
-    if (chdir("/") < 0) {
-        perror("Failed to change directory to root");
-        exit(EXIT_FAILURE);
-    }
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-}
+	for(i=0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
 
-void* timestamp_writer(void* arg) {
-    while(!exit_requested) {
-        sleep(10);
-        pthread_mutex_lock(&file_mutex);
-        int file_fd = open(FILE_PATH, O_CREAT | O_WRONLY | O_APPEND, 0644);
-        if (file_fd >= 0) {
-            time_t now = time(NULL);
-            struct tm *tm_info = localtime(&now);
-            char timebuf[100];
-            strftime(timebuf, sizeof(timebuf), "timestamp:%a, %d %b %Y %H:%M:%S %z\n", tm_info);
-            write(file_fd, timebuf, strlen(timebuf));
-            close(file_fd);
-        }
-        pthread_mutex_unlock(&file_mutex);
-    }
+		// reading position
+		out_offs = (buffer->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+		// passed data area
+		if (out_offs == buffer->in_offs && !buffer->full) return NULL;
+
+		// get entry
+		entry = &buffer->entry[out_offs];
+		
+		if (char_offset < entry->size) {
+			*entry_offset_byte_rtn = char_offset;
+			return entry;
+		}
+
+		// decrease offet by the current data size
+		char_offset -= entry->size;
+	}
+
     return NULL;
 }
 
-void* connection_handler(void* arg) {
-    struct thread_info *tinfo = (struct thread_info*) arg;
-    int client_socket = tinfo->client_socket;
-    ssize_t bytes_received;
-    char buffer[BUFFER_SIZE];
+/**
+* Adds entry @param add_entry to @param buffer in the location specified in buffer->in_offs.
+* If the buffer was already full, overwrites the oldest entry and advances buffer->out_offs to the
+* new start location.
+* Any necessary locking must be handled by the caller
+* Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
+*/
 
-    printf("Accepted connection\n");
+void aesd_circular_buffer_add_entry(
+	struct aesd_circular_buffer *buffer, 
+	const struct aesd_buffer_entry *add_entry)
+{
+    /** * TODO: implement per description */
+	// assumes that 'in_offs' and 'out_offs' are valid always
 
-    while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0)) > 0) {
-        buffer[bytes_received] = '\0';
+	// assign first
+    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+	buffer->entry[buffer->in_offs].size = add_entry->size;
 
-        pthread_mutex_lock(&file_mutex);
-#ifdef USE_AESD_CHAR_DEVICE 1
-		int file_fd = open(FILE_PATH, O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-#else
-        int file_fd = open(FILE_PATH, O_CREAT | O_WRONLY | O_APPEND, 0644);
-#endif
-        if (file_fd >= 0) {
-            write(file_fd, buffer, bytes_received);
-            close(file_fd);
-        }
-        pthread_mutex_unlock(&file_mutex);
+	// move write header forward
+	buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
-        if (strchr(buffer, '\n')) break;
-    }
-
-    pthread_mutex_lock(&file_mutex);
-    int file_fd = open(FILE_PATH, O_RDONLY);
-    if (file_fd >= 0) {
-        while ((bytes_received = read(file_fd, buffer, BUFFER_SIZE)) > 0) {
-            send(client_socket, buffer, bytes_received, 0);
-        }
-        close(file_fd);
-    }
-    pthread_mutex_unlock(&file_mutex);
-
-    close(client_socket);
-    printf("Closed connection");
-    return NULL;
+	// if buffer was full, move reading header forward too
+	if (buffer->full) {
+		buffer->out_offs = buffer->in_offs;
+	} 
+	// check if buffer full
+	else if(buffer->in_offs == buffer->out_offs) {
+		buffer->full = true; 
+	}
 }
 
-int main(int argc, char *argv[]) {
-    struct addrinfo hints, *res;
-    //struct sockaddr_in client_addr;
-    //socklen_t client_len = sizeof(client_addr);
-    //char buffer[BUFFER_SIZE];
-    int daemon_mode = 0;
-    int optval = 1;
-    
-    pthread_mutex_init(&file_mutex, NULL);
+/**
+* Initializes the circular buffer described by @param buffer to an empty struct
+*/
 
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-d") == 0) {
-            daemon_mode = 1;
-        }
-    }
+void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
+{
+    memset(buffer,0,sizeof(struct aesd_circular_buffer));
 
-    signal(SIGINT, handle_signal);
-    signal(SIGTERM, handle_signal);
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    if (getaddrinfo(NULL, PORT, &hints, &res) != 0) {
-        perror("getaddrinfo failed");
-        return -1;
-    }
-
-    if ((server_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
-        perror("Failed to create socket");
-        freeaddrinfo(res);
-        return -1;
-    }
-
-    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1) {
-        perror("Failed to set socket options");
-        close(server_socket);
-        freeaddrinfo(res);
-        return -1;
-    }
-
-    if (bind(server_socket, res->ai_addr, res->ai_addrlen) == -1) {
-        perror("Failed to bind socket");
-        close(server_socket);
-        freeaddrinfo(res);
-        return -1;
-    }
-    
-    freeaddrinfo(res);
-
-    if (daemon_mode) {
-        daemonize();
-    }
-
-    if (listen(server_socket, 10) == -1) {
-        perror("Failed to listen on socket");
-        return -1;
-    }
-#if USE_AESD_CHAR_DEVICE == 1
-#else
-    pthread_t timestamp_thread;
-    pthread_create(&timestamp_thread, NULL, timestamp_writer, NULL);
-#endif
-
-    // while (1) {
-    //     client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
-    //     if (client_socket == -1) {
-    //         perror("Failed to accept connection");
-    //         continue;
-    //     }
-
-    //     printf("Accepted connection from %s\n", inet_ntoa(client_addr.sin_addr));
-
-    //     int file_fd = open(FILE_PATH, O_CREAT | O_WRONLY | O_APPEND, 0666);
-    //     if (file_fd == -1) {
-    //         perror("Failed to open file");
-    //         close(client_socket);
-    //         continue;
-    //     }
-
-    //     ssize_t bytes_received;
-    //     while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0)) > 0) {
-    //         buffer[bytes_received] = '\0';
-    //         write(file_fd, buffer, bytes_received);
-    //         if (strchr(buffer, '\n')) break;
-    //     }
-    //     close(file_fd);
-
-    //     file_fd = open(FILE_PATH, O_RDONLY);
-    //     if (file_fd != -1) {
-    //         while ((bytes_received = read(file_fd, buffer, BUFFER_SIZE)) > 0) {
-    //             send(client_socket, buffer, bytes_received, 0);
-    //         }
-    //         close(file_fd);
-    //     }
-
-    //     printf("Closed connection from %s\n", inet_ntoa(client_addr.sin_addr));
-    //     close(client_socket);
-    // }
-
-    while (!exit_requested) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
-        if (client_socket == -1) {
-            if (exit_requested) break;
-            perror("Failed to accept connection");
-            continue;
-        }
-
-        struct thread_info *tinfo = malloc(sizeof(struct thread_info));
-        tinfo->client_socket = client_socket;
-        SLIST_INSERT_HEAD(&thread_head, tinfo, entries);
-        pthread_create(&tinfo->thread_id, NULL, connection_handler, tinfo);
-    }
-
-    struct thread_info *tinfo;
-    while (!SLIST_EMPTY(&thread_head)) {
-        tinfo = SLIST_FIRST(&thread_head);
-        pthread_join(tinfo->thread_id, NULL);
-        SLIST_REMOVE_HEAD(&thread_head, entries);
-        free(tinfo);
-    }
-
-    close(server_socket);
-#if USE_AESD_CHAR_DEVICE == 1
-#else
-    remove(FILE_PATH);
-#endif
-    return 0;
+	buffer->in_offs = 0;
+	buffer->out_offs = 0;
+	buffer->full = false;
 }
