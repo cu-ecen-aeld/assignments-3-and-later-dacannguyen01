@@ -136,6 +136,33 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
   
     return n_written;
 }
+
+loff_t aesd_seek(struct file *filp, loff_t f_pos, int whence_
+{
+	struct aesd_dev *dev;
+	loff_t new_pos;
+	
+	if(filp == NULL) return -EFAULT;
+	dev = (struct aesd_dev*) filp->private_data;
+	
+	if (dev == NULL) return -EFAULT;
+    if (mutex_lock_interruptible(&dev->mu)) return -ERESTARTSYS;
+    
+    new_pos = fixed_size_llseek(filp, f_pos, whence, dev->buffer.size)
+    PDEBUG("SEEK > new pos =%lld", new_pos);
+    
+    filp->f_pos = new_pos;
+    
+    mutex_unlock(&dev->lock);
+    return newpos;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	struct aesd_dev *dev;
+	struct aesd_seekto cmd_arg;
+}
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
