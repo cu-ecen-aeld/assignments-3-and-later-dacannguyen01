@@ -18,6 +18,7 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -153,7 +154,7 @@ loff_t aesd_seek(struct file *filp, loff_t f_pos, int whence_
     
     filp->f_pos = new_pos;
     
-    mutex_unlock(&dev->lock);
+    mutex_unlock(&dev->mu);
     return newpos;
 }
 
@@ -161,6 +162,54 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct aesd_dev *dev;
 	struct aesd_seekto cmd_arg;
+    int result;
+
+    if(filp == NULL) return -EFAULT;
+    dev = (struct aesd_dev*) filp->private_data;
+
+    if (dev == NULL) return -EFAULT;
+    if (mutex_lock_interruptible(&dev->mu)) return -ERESTARTSYS;
+
+    switch(cmd)
+    {
+        case AESDCHAR_IOCSEEKTO:
+            cmd_arg.write_cmd = -1;
+            rc = copy_from_user(&cmd_arg, (const void __user*)arg, sizeof(cmd_arg));
+
+            if (rc != 0) 
+            {
+                result = -EFAULT;
+            }
+            else 
+            {
+                if (cmd_arg.write_cmd < 0 ||
+                    cmd_arg.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED ||
+                    dev->buf.entry[cmd_arg.write_cmd].buffptr == NULL ||
+                    dev->buf.entry[cmd_arg.write_cmd].size <= cmd_arg.write_cmd_offset)
+                    {
+                        result = -EINVAL;
+                    }
+                else
+                {
+                    int pos = 0;
+
+                    for (int i = 0; i < cmd_arg.write_cmd; i++)
+                    {
+                        pos += dev->buf.entry[i].size;
+                    }
+
+                    filp->f_pos = pos + cmd_arg.write_cmd_offset;
+                    PDEBUG("IOCTL >> cmd=%d, offset%d, pos%lld", cmd_arg.write_cmd, cmd_arg.write_cmd_offset, filp->f_pos);
+                    result = 0;
+                }
+            }
+            break;
+        default:
+            result = -EINVAL;
+    }
+
+    mutex_unlock(&dev->mu);
+    return result;
 }
 
 struct file_operations aesd_fops = {
