@@ -23,6 +23,8 @@
 #include <sys/queue.h>
 #include <sys/time.h>
 
+#include "../aesd-char-driver/aesd_ioctl.h"
+
 #define LISTEN_PORT "9000"  
 #define MAX_BUF 1024
 #define MAX_PACKET_BUF 65000
@@ -55,7 +57,7 @@ SLIST_HEAD(slisthead, slist_data_s) head;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 // file descriptor
-int fw = -1, fr = -1;
+int frw = -1; //, fw = -1, fr = -1;
 
 // control threads
 bool exit_triggered = false;
@@ -74,8 +76,9 @@ static void exit_signal_handler (int signo)
 	syslog(LOG_DEBUG, "Caught signal, exiting");
 
 	// clean up
-	if (fr != -1) close(fr);
-	if (fw != -1) close(fw);
+	//if (fr != -1) close(fr);
+	//if (fw != -1) close(fw);
+	if (frw != -1) close(frw);
 
 	remove(SAVE_FILE); // delete the file
 
@@ -199,29 +202,56 @@ bool bind_socket(int* fdp) {
 
 
 bool save_to_file(char* packet, int size) {
+	int rc;
+	struct aesd_seekto cmd_arg;
+	ssize_t nr;
+	int route;
 
+    if (frw == -1) { 
 #ifdef USE_AESD_CHAR_DEVICE
-	fw = open(SAVE_FILE, O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
+		frw = open(SAVE_FILE, O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
 #else
-	fw = open(SAVE_FILE, O_CREAT | O_WRONLY | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO);
+		frw = open(SAVE_FILE, O_CREAT | O_RDWR | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO);
 #endif
+	}
 
-	if (fw == -1) {
+	if (frw == -1) {
 		perror("open");
 	}
 
-	ssize_t nr = write(fw, packet, size);
+	printf("<< %s\n", packet);
 
-	close(fw);
+	if (strncmp(packet, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
+		route = 0;
 
-	fw = -1; // reset -- for signal handler
+		// driver to ioctl
+		char *not_used = strtok(packet, ":");
 
-	if (nr == -1) {
+		printf("***IOCTL SEEK < %s\n", not_used);
+
+		cmd_arg.write_cmd = atoi(strtok(NULL, ","));
+		cmd_arg.write_cmd_offset = atoi(strtok(NULL, ","));
+
+		rc = ioctl(frw, AESDCHAR_IOCSEEKTO, &cmd_arg);
+	} else {
+		route = 1;
+		nr = write(frw, packet, size);
+		lseek(frw, 0, SEEK_SET);
+	}
+
+	//close(frw);
+
+	//frw = -1; // reset -- for signal handler
+
+	if (route == 0 && rc < 0) {
+		perror("ioctl");
+		return false;
+	}
+	else if (route ==1 && nr == -1) {
 		perror("write");
 		return false;
-	} else {
-		return true;
 	}
+	return true;
 }
 
 // listening module
@@ -238,7 +268,7 @@ void accept_loop(int fd_server)
 
 
 #ifdef USE_AESD_CHAR_DEVICE
-	printf("server: waiting for connections (save to dev I/O)...\n");
+	printf("server 2.0: waiting for connections (save to dev I/O)...\n");
 #else
 	printf("server: waiting for connections (save to tmp file)...\n");
 #endif
@@ -382,15 +412,20 @@ void* session_handler(void* dp)
 			// feedback
 			pthread_mutex_lock(&lock);
 
-			fr = open(SAVE_FILE, O_RDONLY);
+			if (frw == -1) {
+				frw = open(SAVE_FILE, O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+			    // fr = open(SAVE_FILE, O_RDONLY);
+			}
 
-			if (fr == -1) {
+			//if (fr== -1) {
+			if (frw == -1) {
 			    perror("open - rd");
 				exit(-1);
 			}
 				
 			while(1) {
-				n_read = read(fr, recv_buf, MAX_BUF);
+				//n_read = read(fr, recv_buf, MAX_BUF);
+				n_read = read(frw, recv_buf, MAX_BUF);
 
 				if (n_read == -1) {
 					perror("read");
@@ -407,9 +442,9 @@ void* session_handler(void* dp)
 					break;
 				}
 			}
-			close(fr);
+			//close(fr);
 
-			fr = -1; // for signal handler
+			//fr = -1; // for signal handler
 
 			pthread_mutex_unlock(&lock);
 		} // if
@@ -452,7 +487,7 @@ int main(int argc, char *argv[])
 	//struct sigaction sa;
 
 	// syslog
-	openlog("Assignment6", LOG_NDELAY, LOG_USER);
+	openlog("Assignment9", LOG_NDELAY, LOG_USER);
 
 	// bind socket
 	if(!bind_socket(&fd)) {
