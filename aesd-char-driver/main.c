@@ -138,7 +138,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     return n_written;
 }
 
-loff_t aesd_seek(struct file *filp, loff_t f_pos, int whence_
+loff_t aesd_seek(struct file *filp, loff_t f_pos, int whence)
 {
 	struct aesd_dev *dev;
 	loff_t new_pos;
@@ -149,13 +149,13 @@ loff_t aesd_seek(struct file *filp, loff_t f_pos, int whence_
 	if (dev == NULL) return -EFAULT;
     if (mutex_lock_interruptible(&dev->mu)) return -ERESTARTSYS;
     
-    new_pos = fixed_size_llseek(filp, f_pos, whence, dev->buffer.size)
+    new_pos = fixed_size_llseek(filp, f_pos, whence, dev->buf.size)
     PDEBUG("SEEK > new pos =%lld", new_pos);
     
     filp->f_pos = new_pos;
     
     mutex_unlock(&dev->mu);
-    return newpos;
+    return new_pos;
 }
 
 long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -174,7 +174,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     {
         case AESDCHAR_IOCSEEKTO:
             cmd_arg.write_cmd = -1;
-            rc = copy_from_user(&cmd_arg, (const void __user*)arg, sizeof(cmd_arg));
+            int rc = copy_from_user(&cmd_arg, (const void __user*)arg, sizeof(cmd_arg));
 
             if (rc != 0) 
             {
@@ -217,6 +217,8 @@ struct file_operations aesd_fops = {
     .read =     aesd_read,
     .write =    aesd_write,
     .open =     aesd_open,
+    .llseek =   aesd_seek,
+    .unlocked_ioctl = aesd_ioctl,
     .release =  aesd_release,
 };
 
