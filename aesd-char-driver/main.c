@@ -149,8 +149,9 @@ loff_t aesd_seek(struct file *filp, loff_t f_pos, int whence)
 	if (dev == NULL) return -EFAULT;
     if (mutex_lock_interruptible(&dev->mu)) return -ERESTARTSYS;
     
-    new_pos = fixed_size_llseek(filp, f_pos, whence, dev->buf.size)
+    new_pos = fixed_size_llseek(filp, f_pos, whence, dev->buf.size);
     PDEBUG("SEEK > new pos =%lld", new_pos);
+	if (new_pos < 0) return -EINVAL;
     
     filp->f_pos = new_pos;
     
@@ -162,7 +163,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct aesd_dev *dev;
 	struct aesd_seekto cmd_arg;
-    int result;
+    int result, rc, pos;
 
     if(filp == NULL) return -EFAULT;
     dev = (struct aesd_dev*) filp->private_data;
@@ -174,7 +175,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     {
         case AESDCHAR_IOCSEEKTO:
             cmd_arg.write_cmd = -1;
-            int rc = copy_from_user(&cmd_arg, (const void __user*)arg, sizeof(cmd_arg));
+            rc = copy_from_user(&cmd_arg, (const void __user*)arg, sizeof(cmd_arg));
 
             if (rc != 0) 
             {
@@ -191,7 +192,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                     }
                 else
                 {
-                    int pos = 0;
+                    pos = 0;
 
                     for (int i = 0; i < cmd_arg.write_cmd; i++)
                     {

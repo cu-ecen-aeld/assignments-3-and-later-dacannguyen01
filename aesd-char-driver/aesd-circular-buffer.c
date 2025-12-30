@@ -33,30 +33,34 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     /**
     * TODO: implement per description
     */
-    if(buffer == NULL)
-    return NULL;
+	int i, out_offs;
+	struct aesd_buffer_entry *entry;
 
-    size_t char_count = (buffer->entry[buffer->out_offs]).size;
-    int buffer_count = buffer->out_offs;
-    size_t last_pos = 0;
+	// check if buffer is empty
+	if (!buffer->full && buffer->in_offs == buffer->out_offs) {
+		return NULL;
+	} 
 
-    while(char_offset > (char_count - 1))
-    {
-        last_pos = char_count;
-        buffer_count = (buffer_count + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-        
-        if(buffer_count == buffer->out_offs)
-        return NULL;
+	for(i=0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
 
-        char_count += (buffer->entry[buffer_count]).size;
-    }
+		// reading position
+		out_offs = (buffer->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
-    if(char_offset <= (char_count - 1))
-    {
-        *entry_offset_byte_rtn = char_offset - last_pos;
-        return &buffer->entry[buffer_count];
-    }
-    
+		// passed data area
+		if (out_offs == buffer->in_offs && !buffer->full) return NULL;
+
+		// get entry
+		entry = &buffer->entry[out_offs];
+		
+		if (char_offset < entry->size) {
+			*entry_offset_byte_rtn = char_offset;
+			return entry;
+		}
+
+		// decrease offet by the current data size
+		char_offset -= entry->size;
+	}
+
     return NULL;
 }
 
@@ -69,26 +73,28 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    /**
-    * TODO: implement per description
-    */
-    if(buffer == NULL || add_entry == NULL || add_entry->buffptr == NULL || add_entry->size == 0)
-    return;
+    /** * TODO: implement per description */
+	// assumes that 'in_offs' and 'out_offs' are valid always
 
-    buffer->entry[buffer->in_offs] = *add_entry;
-    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-    buffer->size += add_entry->size;
+	// assign first
+    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+	buffer->entry[buffer->in_offs].size = add_entry->size;
+	buffer->size += add_entry->size;
 
-    if(buffer->full)
-    {
-        buffer->size -= buffer->entry[buffer->out_offs].size;
-        buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-    }
+	// move write header forward
+	buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
-    if(buffer->in_offs == buffer->out_offs)
-    {
-        buffer->full = 1;
-    }
+	// if buffer was full, move reading header forward too
+	if (buffer->full) {
+		// decrease the total size
+		buffer->size -= buffer->entry[buffer->out_offs].size;
+		// move reading hearder forward
+		buffer->out_offs = buffer->in_offs;
+	} 
+	// check if buffer full
+	else if(buffer->in_offs == buffer->out_offs) {
+		buffer->full = true; 
+	}
 }
 
 /**
